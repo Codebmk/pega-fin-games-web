@@ -41,6 +41,7 @@ const mergedEnv = {
 const envSchema = z.object({
   PORT: z.coerce.number().default(4000),
   NODE_ENV: z.string().default("development"),
+  WEB_ORIGIN: z.string().optional(),
   DATABASE_URL: z.string(),
   REDIS_URL: z.string(),
   JWT_SECRET: z.string(),
@@ -64,6 +65,7 @@ if (!parsed.success) {
 export const config = {
   port: parsed.data.PORT,
   nodeEnv: parsed.data.NODE_ENV,
+  webOrigin: parsed.data.WEB_ORIGIN,
   databaseUrl: parsed.data.DATABASE_URL,
   redisUrl: parsed.data.REDIS_URL,
   jwtSecret: parsed.data.JWT_SECRET,

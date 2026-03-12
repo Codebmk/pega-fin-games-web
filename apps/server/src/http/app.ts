@@ -1,15 +1,23 @@
-import Fastify from "fastify";
+﻿import Fastify from "fastify";
+import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import { z } from "zod";
-import { createUser, getUserByPhone, listUsers, updateKycUrls } from "../db/users.js";
+import { createUser, getUserById, getUserByPhone, listUsers, updateKycUrls } from "../db/users.js";
+import { adjustBalance, createWithdrawal, getWalletByUserId, listTransactions, listWithdrawals, updateWithdrawalStatus } from "../db/wallets.js";
 import { hashPassword, verifyPassword } from "../utils/password.js";
 import { isAdult } from "../utils/age.js";
 import { signToken, requireAuth } from "./auth.js";
 import { uploadKycImage } from "../storage/supabase.js";
+import { config } from "../config.js";
 
 export async function buildApp() {
   const app = Fastify({
     logger: true
+  });
+
+  await app.register(cors, {
+    origin: config.webOrigin ?? true,
+    credentials: true
   });
 
   await app.register(multipart, {
@@ -89,7 +97,15 @@ export async function buildApp() {
   app.get("/me", async (request, reply) => {
     try {
       const auth = await requireAuth(request);
-      return reply.send({ userId: auth.id, isAdmin: auth.isAdmin });
+      const user = await getUserById(auth.id);
+      if (!user) {
+        return reply.code(401).send({ error: "unauthorized" });
+      }
+      return reply.send({
+        userId: auth.id,
+        isAdmin: auth.isAdmin,
+        kycStatus: user.kyc_status
+      });
     } catch {
       return reply.code(401).send({ error: "unauthorized" });
     }
@@ -167,6 +183,149 @@ export async function buildApp() {
         createdAt: user.created_at
       }))
     });
+  });
+
+  app.get("/wallet", async (request, reply) => {
+    let auth;
+    try {
+      auth = await requireAuth(request);
+    } catch {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const wallet = await getWalletByUserId(auth.id);
+    if (!wallet) {
+      return reply.code(404).send({ error: "wallet_not_found" });
+    }
+    return reply.send({ balance: wallet.balance, currency: wallet.currency });
+  });
+
+  app.get("/wallet/transactions", async (request, reply) => {
+    let auth;
+    try {
+      auth = await requireAuth(request);
+    } catch {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const txs = await listTransactions(auth.id, 50);
+    return reply.send({ transactions: txs });
+  });
+
+  app.post("/wallet/withdraw", async (request, reply) => {
+    let auth;
+    try {
+      auth = await requireAuth(request);
+    } catch {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    const schema = z.object({
+      amount: z.coerce.number().positive(),
+      walletAddress: z.string().min(10)
+    });
+    const parsed = schema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_payload" });
+    }
+
+    try {
+      await adjustBalance({
+        userId: auth.id,
+        amount: -parsed.data.amount,
+        type: "withdrawal",
+        status: "pending"
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "insufficient_funds") {
+        return reply.code(400).send({ error: "insufficient_funds" });
+      }
+      throw error;
+    }
+
+    const withdrawalId = await createWithdrawal({
+      userId: auth.id,
+      amount: parsed.data.amount,
+      walletAddress: parsed.data.walletAddress
+    });
+    return reply.send({ ok: true, withdrawalId });
+  });
+
+  app.get("/admin/withdrawals", async (request, reply) => {
+    let auth;
+    try {
+      auth = await requireAuth(request);
+    } catch {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    if (!auth.isAdmin) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+    const withdrawals = await listWithdrawals(50);
+    return reply.send({ withdrawals });
+  });
+
+  app.post("/admin/withdrawals/:id", async (request, reply) => {
+    let auth;
+    try {
+      auth = await requireAuth(request);
+    } catch {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+    if (!auth.isAdmin) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+    const schema = z.object({
+      status: z.enum(["approved", "rejected", "paid"])
+    });
+    const parsed = schema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_payload" });
+    }
+    await updateWithdrawalStatus({
+      withdrawalId: request.params["id" as never] as string,
+      status: parsed.data.status
+    });
+    return reply.send({ ok: true });
+  });
+
+  app.post("/payments/webhook/coinbase", async (request, reply) => {
+    const schema = z.object({
+      event: z.object({
+        type: z.string(),
+        data: z.object({
+          metadata: z.object({
+            userId: z.string()
+          }).optional(),
+          payments: z.array(z.object({ value: z.object({ local: z.object({ amount: z.string() }) }) })).optional()
+        })
+      })
+    });
+    const parsed = schema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_payload" });
+    }
+
+    const eventType = parsed.data.event.type;
+    if (eventType !== "charge:confirmed") {
+      return reply.send({ ok: true });
+    }
+
+    const userId = parsed.data.event.data.metadata?.userId;
+    const amountStr = parsed.data.event.data.payments?.[0]?.value?.local?.amount;
+    if (!userId || !amountStr) {
+      return reply.code(400).send({ error: "missing_metadata" });
+    }
+    const amount = Number(amountStr);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return reply.code(400).send({ error: "invalid_amount" });
+    }
+
+    await adjustBalance({
+      userId,
+      amount,
+      type: "deposit",
+      status: "completed"
+    });
+
+    return reply.send({ ok: true });
   });
 
   return app;

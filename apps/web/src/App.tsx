@@ -1,7 +1,8 @@
-﻿import { useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { apiFetch } from "./api";
+import { getTransactions, getWallet, requestWithdrawal } from "./wallet";
 
-type View = "register" | "login" | "kyc" | "admin";
+type View = "register" | "login" | "kyc" | "admin" | "dashboard";
 
 type AdminUser = {
   id: string;
@@ -13,17 +14,48 @@ type AdminUser = {
   createdAt: string;
 };
 
+type Transaction = {
+  id: string;
+  type: string;
+  amount: string;
+  status: string;
+  created_at: string;
+};
+
+type MeResponse = {
+  userId: string;
+  isAdmin: boolean;
+  kycStatus: string;
+};
+
 export default function App() {
   const [view, setView] = useState<View>("register");
   const [message, setMessage] = useState("");
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [walletBalance, setWalletBalance] = useState<string>("0");
+  const [walletCurrency, setWalletCurrency] = useState<string>("USDC");
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [me, setMe] = useState<MeResponse | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    apiFetch<MeResponse>("/me")
+      .then((data) => {
+        setMe(data);
+        setView("dashboard");
+      })
+      .catch(() => {
+        localStorage.removeItem("token");
+      });
+  }, []);
 
   async function handleRegister(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
     const data = Object.fromEntries(new FormData(form).entries());
     try {
-      const res = await apiFetch<{ token: string }>("/auth/register", {
+      await apiFetch("/auth/register", {
         method: "POST",
         body: JSON.stringify({
           phone: data.phone,
@@ -35,9 +67,8 @@ export default function App() {
           govIdNumber: data.govIdNumber
         })
       });
-      localStorage.setItem("token", res.token);
-      setMessage("Registration complete. Upload KYC images.");
-      setView("kyc");
+      setMessage("Registration complete. Please login to continue.");
+      setView("login");
       form.reset();
     } catch (err) {
       setMessage(String(err));
@@ -57,8 +88,10 @@ export default function App() {
         })
       });
       localStorage.setItem("token", res.token);
+      const profile = await apiFetch<MeResponse>("/me");
+      setMe(profile);
       setMessage("Login successful.");
-      setView("kyc");
+      setView("dashboard");
       form.reset();
     } catch (err) {
       setMessage(String(err));
@@ -76,6 +109,9 @@ export default function App() {
       });
       setMessage("KYC uploaded. Awaiting approval.");
       form.reset();
+      const profile = await apiFetch<MeResponse>("/me");
+      setMe(profile);
+      setView("dashboard");
     } catch (err) {
       setMessage(String(err));
     }
@@ -91,11 +127,50 @@ export default function App() {
     }
   }
 
+  async function loadWallet() {
+    try {
+      const wallet = await getWallet();
+      setWalletBalance(wallet.balance);
+      setWalletCurrency(wallet.currency);
+      const txs = await getTransactions();
+      setTransactions(txs.transactions as Transaction[]);
+      setMessage("Wallet loaded.");
+    } catch (err) {
+      setMessage(String(err));
+    }
+  }
+
+  async function handleWithdrawal(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const data = Object.fromEntries(new FormData(form).entries());
+    try {
+      await requestWithdrawal(Number(data.amount), String(data.walletAddress));
+      setMessage("Withdrawal request submitted.");
+      form.reset();
+      await loadWallet();
+    } catch (err) {
+      setMessage(String(err));
+    }
+  }
+
+  const showKycChip = !!me && me.kycStatus !== "approved";
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-5xl px-6 py-12">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-semibold">PegaFin Crash</h1>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-semibold">PegaFin Crash</h1>
+            {showKycChip && (
+              <button
+                className="rounded-full border border-amber-400 px-3 py-1 text-xs text-amber-300"
+                onClick={() => setView("kyc")}
+              >
+                Complete KYC
+              </button>
+            )}
+          </div>
           <div className="flex gap-3 text-sm">
             <button
               className={`px-3 py-1 rounded border ${view === "register" ? "border-white" : "border-slate-700"}`}
@@ -110,10 +185,10 @@ export default function App() {
               Login
             </button>
             <button
-              className={`px-3 py-1 rounded border ${view === "kyc" ? "border-white" : "border-slate-700"}`}
-              onClick={() => setView("kyc")}
+              className={`px-3 py-1 rounded border ${view === "dashboard" ? "border-white" : "border-slate-700"}`}
+              onClick={() => setView("dashboard")}
             >
-              KYC Upload
+              Dashboard
             </button>
             <button
               className={`px-3 py-1 rounded border ${view === "admin" ? "border-white" : "border-slate-700"}`}
@@ -160,6 +235,56 @@ export default function App() {
             <input name="back" type="file" accept="image/*" className="rounded bg-slate-900 px-3 py-2" required />
             <button className="rounded bg-emerald-500 px-4 py-2 font-semibold text-slate-950">Upload KYC</button>
           </form>
+        )}
+
+        {view === "dashboard" && (
+          <div className="mt-8 grid gap-6">
+            <div className="rounded border border-slate-800 bg-slate-900 p-4">
+              <div className="text-sm text-slate-400">Balance</div>
+              <div className="text-2xl font-semibold">{walletBalance} {walletCurrency}</div>
+              <button
+                className="mt-3 w-fit rounded border border-slate-700 px-3 py-1 text-sm"
+                onClick={loadWallet}
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="rounded border border-slate-800 bg-slate-900 p-4">
+              <div className="text-lg font-semibold">Request Withdrawal</div>
+              <form className="mt-4 grid gap-3" onSubmit={handleWithdrawal}>
+                <input name="amount" type="number" step="0.01" placeholder="Amount" className="rounded bg-slate-950 px-3 py-2" required />
+                <input name="walletAddress" placeholder="Base wallet address" className="rounded bg-slate-950 px-3 py-2" required />
+                <button className="rounded bg-emerald-500 px-4 py-2 font-semibold text-slate-950">Submit</button>
+              </form>
+            </div>
+
+            <div className="rounded border border-slate-800 bg-slate-900 p-4">
+              <div className="text-lg font-semibold">Transactions</div>
+              <div className="mt-3 overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-950 text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Type</th>
+                      <th className="px-3 py-2 text-left">Amount</th>
+                      <th className="px-3 py-2 text-left">Status</th>
+                      <th className="px-3 py-2 text-left">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transactions.map((tx) => (
+                      <tr key={tx.id} className="border-t border-slate-800">
+                        <td className="px-3 py-2">{tx.type}</td>
+                        <td className="px-3 py-2">{tx.amount}</td>
+                        <td className="px-3 py-2">{tx.status}</td>
+                        <td className="px-3 py-2">{new Date(tx.created_at).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         )}
 
         {view === "admin" && (
