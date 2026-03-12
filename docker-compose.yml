@@ -1,0 +1,55 @@
+﻿services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: crash_game
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      PORT: 4000
+      NODE_ENV: development
+      DATABASE_URL: postgres://postgres:postgres@db:5432/crash_game
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: change_me
+      PAYMENT_PROVIDER: coinbase_commerce
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET}
+    ports:
+      - "4000:4000"
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - .:/app
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      VITE_API_URL: http://localhost:4000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server
+    volumes:
+      - .:/app
+
+volumes:
+  db_data:
