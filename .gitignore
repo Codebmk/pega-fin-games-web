@@ -1,0 +1,10 @@
+node_modules
+.DS_Store
+.env
+.env.*
+!.env.example
+pnpm-lock.yaml
+package-lock.json
+apps/server/dist
+apps/web/dist
+packages/shared/dist

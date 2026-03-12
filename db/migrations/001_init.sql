@@ -1,0 +1,60 @@
+﻿CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  phone TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  email TEXT,
+  dob DATE NOT NULL,
+  country TEXT NOT NULL,
+  nationality TEXT NOT NULL,
+  gov_id_number TEXT NOT NULL,
+  gov_id_front_url TEXT NOT NULL,
+  gov_id_back_url TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS wallets (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  balance NUMERIC(18,6) NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'USDC',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS rounds (
+  id TEXT PRIMARY KEY,
+  server_seed_hash TEXT NOT NULL,
+  server_seed_reveal TEXT,
+  client_seed TEXT NOT NULL,
+  nonce BIGINT NOT NULL DEFAULT 0,
+  crash_point NUMERIC(10,2) NOT NULL,
+  start_time TIMESTAMPTZ,
+  end_time TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS bets (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  round_id TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+  amount NUMERIC(18,6) NOT NULL,
+  cashout_multiplier NUMERIC(10,2),
+  result TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  amount NUMERIC(18,6) NOT NULL,
+  status TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS withdrawals (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  amount NUMERIC(18,6) NOT NULL,
+  wallet_address TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
