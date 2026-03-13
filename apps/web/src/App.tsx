@@ -220,7 +220,19 @@ export default function App() {
               </button>
             )}
           </div>
-          <div className="flex gap-3 text-sm">
+          <div className="flex items-center gap-3 text-sm">
+            {isLoggedIn && (
+              <div className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1">
+                <span className="text-slate-400">Balance</span>
+                <span className="font-semibold">{walletBalance} {walletCurrency}</span>
+                <button
+                  className="rounded-full bg-emerald-400 px-3 py-1 text-xs font-semibold text-slate-950"
+                  onClick={() => setMessage("Deposit flow coming soon.")}
+                >
+                  Deposit
+                </button>
+              </div>
+            )}
             {!isLoggedIn && (
               <>
                 <button
@@ -302,18 +314,6 @@ export default function App() {
 
         {!authChecking && view === "dashboard" && (
           <div className="mt-8 grid gap-6">
-            <div className="rounded border border-slate-800 bg-slate-900 p-4">
-              <div className="text-sm text-slate-400">Balance</div>
-              <div className="text-2xl font-semibold">{walletBalance} {walletCurrency}</div>
-              <button
-                className="mt-3 w-fit rounded border border-slate-700 px-3 py-1 text-sm"
-                onClick={loadWallet}
-                disabled={loading.wallet}
-              >
-                {loading.wallet ? "Refreshing..." : "Refresh"}
-              </button>
-            </div>
-
             <div className="rounded border border-slate-800 bg-slate-900 p-4">
               <div className="text-lg font-semibold">Request Withdrawal</div>
               <form className="mt-4 grid gap-3" onSubmit={handleWithdrawal}>
