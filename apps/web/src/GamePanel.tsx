@@ -231,7 +231,7 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
           <div className="mt-4 text-xs text-slate-500">Provably Fair Game</div>
         </div>
 
-        <div className="relative flex h-full flex-col gap-4">
+        <div className="relative grid h-full gap-4" style={{ gridTemplateRows: "55% 45%" }}>
           <div className="absolute left-0 right-0 top-0 z-20">
             <div className="flex justify-between items-start rounded-2xl bg-[#111519] px-4 py-3 shadow-xl">
               <div className="flex flex-wrap gap-2 text-xs text-slate-300">
@@ -250,7 +250,7 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
             </div>
           </div>
 
-          <div className="flex-1 rounded-2xl bg-[radial-gradient(circle_at_top,_#232a30,_#0b0f12)] p-6 pt-20">
+          <div className="rounded-2xl bg-[radial-gradient(circle_at_top,_#232a30,_#0b0f12)] p-6 pt-20">
             <div className="flex items-center justify-between text-xs text-slate-400">
               <span className="uppercase tracking-wider">{status}</span>
               <span>{connected ? "WS connected" : "WS disconnected"}</span>
