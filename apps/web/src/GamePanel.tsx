@@ -23,30 +23,29 @@ type Props = {
   showToast?: (message: string) => void;
 };
 
-const QUICK_AMOUNTS = [1, 2, 5, 10];
+const QUICK_AMOUNTS = [1000, 2000, 5000, 10000];
 
 export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast }: Props) {
   const [status, setStatus] = useState<EngineState["status"]>("waiting");
   const [multiplier, setMultiplier] = useState(1);
   const [roundId, setRoundId] = useState<string | null>(null);
   const [crashPoint, setCrashPoint] = useState<number | null>(null);
-  const [betAmount, setBetAmount] = useState("1");
   const [connected, setConnected] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [history, setHistory] = useState<number[]>([]);
   const [bettingEndsAt, setBettingEndsAt] = useState<number | null>(null);
-  const [activeBet, setActiveBet] = useState(false);
-  const [tab, setTab] = useState<"bet" | "auto">("bet");
-  const [autoBet, setAutoBet] = useState(false);
-  const [autoCash, setAutoCash] = useState(false);
-  const [autoCashValue, setAutoCashValue] = useState("1.10");
   const [historyLimit, setHistoryLimit] = useState(60);
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [rowRatio, setRowRatio] = useState("55% 45%");
+  const [tab, setTab] = useState<"bet" | "auto">("bet");
+  const [panels, setPanels] = useState([
+    { id: "A" as const, betAmount: "1.00", betId: null as string | null, inputDirty: false, autoBet: false, autoCash: false, autoCashValue: "1.10" },
+    { id: "B" as const, betAmount: "1.00", betId: null as string | null, inputDirty: false, autoBet: false, autoCash: false, autoCashValue: "1.10" }
+  ]);
 
   const token = useMemo(() => localStorage.getItem("token"), []);
   const socketRef = useRef<WebSocket | null>(null);
-  const autoCashTriggered = useRef(false);
-  const inputDirty = useRef(false);
+  const autoCashTriggered = useRef<Record<string, boolean>>({});
 
   const bettingProgress = bettingEndsAt
     ? Math.max(0, Math.min(1, (bettingEndsAt - Date.now()) / 5000))
@@ -55,6 +54,7 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
   useEffect(() => {
     const updateLimit = () => {
       setHistoryLimit(window.innerWidth >= 1024 ? 60 : 30);
+      setRowRatio(window.innerWidth >= 1024 ? "55% 45%" : "50% 50%");
     };
     updateLimit();
     window.addEventListener("resize", updateLimit);
@@ -88,13 +88,18 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
         setRoundId(String(msg.roundId ?? ""));
         setCrashPoint(null);
         setBettingEndsAt(Number(msg.bettingEndsAt ?? null));
-        setActiveBet(false);
-        autoCashTriggered.current = false;
+        autoCashTriggered.current = {};
+        setPanels((prev) => prev.map((panel) => ({ ...panel, betId: null })));
         setLog((prev) => ["Round started", ...prev].slice(0, 5));
 
-        if (autoBet && hasFunds) {
-          handleBet();
-        }
+        setPanels((prev) =>
+          prev.map((panel) => {
+            if (panel.autoBet && hasFunds) {
+              handleBet(panel.id, panel.betAmount);
+            }
+            return panel;
+          })
+        );
         return;
       }
       if (msg.type === "multiplier_update") {
@@ -106,8 +111,8 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
         setStatus("crashed");
         setCrashPoint(Number(msg.crashPoint ?? 1));
         setBettingEndsAt(null);
-        setActiveBet(false);
-        autoCashTriggered.current = false;
+        autoCashTriggered.current = {};
+        setPanels((prev) => prev.map((panel) => ({ ...panel, betId: null })));
         setLog((prev) => ["Round crashed", ...prev].slice(0, 5));
         return;
       }
@@ -117,17 +122,20 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
         return;
       }
       if (msg.type === "bet_confirmed") {
-        setActiveBet(true);
+        const betId = String(msg.betId ?? "");
+        const clientTag = String(msg.clientTag ?? "");
+        setPanels((prev) => prev.map((panel) => (panel.id === clientTag ? { ...panel, betId } : panel)));
         onBetPlaced?.();
         setLog((prev) => ["Bet confirmed", ...prev].slice(0, 5));
         return;
       }
       if (msg.type === "cashout_success") {
         const payout = Number(msg.payout ?? 0);
+        const betId = String(msg.betId ?? "");
         onCashout?.(payout);
         showToast?.(`Cashed out ${payout.toFixed(2)} USDC`);
-        setActiveBet(false);
-        autoCashTriggered.current = false;
+        autoCashTriggered.current[betId] = true;
+        setPanels((prev) => prev.map((panel) => (panel.betId === betId ? { ...panel, betId: null } : panel)));
         setLog((prev) => [`Cashed out ${payout}`, ...prev].slice(0, 5));
         return;
       }
@@ -137,17 +145,20 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
     };
 
     return () => ws.close();
-  }, [autoBet, hasFunds, historyLimit, onBetPlaced, onCashout, showToast]);
+  }, [hasFunds, historyLimit, onBetPlaced, onCashout, showToast]);
 
   useEffect(() => {
-    if (!autoCash || !activeBet || status !== "running") return;
-    if (autoCashTriggered.current) return;
-    const target = Number(autoCashValue);
-    if (Number.isFinite(target) && multiplier >= target) {
-      autoCashTriggered.current = true;
-      handleCashout();
-    }
-  }, [autoCash, autoCashValue, activeBet, multiplier, status]);
+    if (status !== "running") return;
+    panels.forEach((panel) => {
+      if (!panel.autoCash || !panel.betId) return;
+      if (autoCashTriggered.current[panel.betId]) return;
+      const target = Number(panel.autoCashValue);
+      if (Number.isFinite(target) && multiplier >= target) {
+        autoCashTriggered.current[panel.betId] = true;
+        handleCashout(panel.betId);
+      }
+    });
+  }, [multiplier, panels, status]);
 
   useEffect(() => {
     let raf: number;
@@ -167,26 +178,27 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
     ws.send(JSON.stringify(payload));
   }
 
-  function handleBet() {
+  function handleBet(panelId: "A" | "B", amount: string) {
     if (!token) return;
-    sendMessage({ type: "place_bet", amount: betAmount, token });
+    sendMessage({ type: "place_bet", amount, token, clientTag: panelId });
   }
 
-  function handleCashout() {
+  function handleCashout(betId?: string) {
     if (!token) return;
-    sendMessage({ type: "cash_out", token });
+    sendMessage({ type: "cash_out", token, betId });
   }
 
-  function addQuickAmount(amount: number) {
-    if (inputDirty.current) return;
-    const current = Number(betAmount) || 0;
-    const next = current + amount;
-    setBetAmount(next.toFixed(2));
+  function addQuickAmount(panelId: "A" | "B", amount: number) {
+    setPanels((prev) =>
+      prev.map((panel) => {
+        if (panel.id !== panelId) return panel;
+        if (panel.inputDirty) return panel;
+        const current = Number(panel.betAmount) || 0;
+        return { ...panel, betAmount: (current + amount).toFixed(2) };
+      })
+    );
   }
 
-  const canBet = status === "betting" && hasFunds && Number(betAmount) > 0 && !activeBet;
-  const canCashout = status === "running" && hasFunds && activeBet;
-  const runningPayout = (Number(betAmount) || 0) * multiplier;
   const historyVisible = historyExpanded ? history : history.slice(0, Math.min(historyLimit, 18));
 
   return (
@@ -231,10 +243,10 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
           <div className="mt-4 text-xs text-slate-500">Provably Fair Game</div>
         </div>
 
-        <div className="relative grid h-full gap-4" style={{ gridTemplateRows: "55% 45%" }}>
+        <div className="relative grid h-full gap-1" style={{ gridTemplateRows: rowRatio }}>
           <div className="absolute left-0 right-0 top-0 z-20">
-            <div className="flex justify-between items-start rounded-2xl bg-[#111519] px-4 py-3 shadow-xl">
-              <div className="flex flex-wrap gap-2 text-xs text-slate-300">
+            <div className={`flex justify-between items-start rounded-2xl bg-[#111519] px-4 py-3 shadow-xl ${historyExpanded ? "" : "overflow-hidden"}`}>
+              <div className={historyExpanded ? "mt-2 flex flex-wrap gap-2 text-xs text-slate-300" : "mt-2 flex flex-nowrap gap-2 text-xs text-slate-300 overflow-hidden"}>
                 {historyVisible.map((val, idx) => (
                   <span key={`${val}-${idx}`} className={val >= 2 ? "text-emerald-400" : "text-rose-400"}>
                     {val.toFixed(2)}x
@@ -273,90 +285,153 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
             </div>
           </div>
 
-          <div className="rounded-2xl bg-[#1a1f23] p-4">
-            <div className="flex items-center justify-between rounded-full bg-[#101418] p-1 text-xs">
-              <button
-                className={`w-1/2 rounded-full py-1 ${tab === "bet" ? "bg-[#1f252b]" : "text-slate-400"}`}
-                onClick={() => setTab("bet")}
-              >
-                Bet
-              </button>
-              <button
-                className={`w-1/2 rounded-full py-1 ${tab === "auto" ? "bg-[#1f252b]" : "text-slate-400"}`}
-                onClick={() => setTab("auto")}
-              >
-                Auto
-              </button>
+          <div className="rounded-2xl bg-[#1a1f23]">
+            <div className="grid gap-4 lg:grid-cols-2">
+              {panels.map((panel) => {
+                const canBet = status === "betting" && hasFunds && Number(panel.betAmount) > 0 && !panel.betId;
+                const canCashout = status === "running" && hasFunds && !!panel.betId;
+
+                return (
+                  <div key={panel.id} className="rounded-2xl bg-[#20262b] p-4">
+                    <div className="flex items-center justify-between rounded-full bg-[#101418] p-1 text-xs">
+                      <button
+                        className={`w-1/2 rounded-full py-1 ${tab === "bet" ? "bg-[#1f252b]" : "text-slate-400"}`}
+                        onClick={() => setTab("bet")}
+                      >
+                        Bet
+                      </button>
+                      <button
+                        className={`w-1/2 rounded-full py-1 ${tab === "auto" ? "bg-[#1f252b]" : "text-slate-400"}`}
+                        onClick={() => setTab("auto")}
+                      >
+                        Auto
+                      </button>
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                      <div className="flex items-center gap-3">
+                        <button
+                          className="h-7 w-7 rounded-full bg-[#101418]"
+                          onClick={() =>
+                            setPanels((prev) =>
+                              prev.map((p) =>
+                                p.id === panel.id
+                                  ? { ...p, betAmount: (Math.max(0, Number(p.betAmount) - 1)).toFixed(2) }
+                                  : p
+                              )
+                            )
+                          }
+                        >
+                          -
+                        </button>
+                        <input
+                          value={panel.betAmount}
+                          onChange={(e) =>
+                            setPanels((prev) =>
+                              prev.map((p) =>
+                                p.id === panel.id ? { ...p, betAmount: e.target.value, inputDirty: true } : p
+                              )
+                            )
+                          }
+                          onBlur={() =>
+                            setPanels((prev) =>
+                              prev.map((p) => (p.id === panel.id ? { ...p, inputDirty: false } : p))
+                            )
+                          }
+                          className="w-20 rounded bg-[#101418] px-3 py-2 text-center text-lg"
+                        />
+                        <button
+                          className="h-7 w-7 rounded-full bg-[#101418]"
+                          onClick={() =>
+                            setPanels((prev) =>
+                              prev.map((p) =>
+                                p.id === panel.id
+                                  ? { ...p, betAmount: (Number(p.betAmount) + 1).toFixed(2) }
+                                  : p
+                              )
+                            )
+                          }
+                        >
+                          +
+                        </button>
+
+                        <button
+                          className="ml-auto rounded-2xl bg-[#4CAF50] px-4 py-3 text-lg font-semibold text-white disabled:opacity-50"
+                          onClick={() => {
+                            if (canCashout) return handleCashout(panel.betId ?? undefined);
+                            if (canBet) return handleBet(panel.id, panel.betAmount);
+                          }}
+                          disabled={!canBet && !canCashout}
+                        >
+                          <div>Bet</div>
+                          <div className="text-sm font-semibold">{Number(panel.betAmount).toFixed(2)} USDC</div>
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
+                        {QUICK_AMOUNTS.map((amount) => (
+                          <button
+                            key={amount}
+                            className="rounded-full bg-[#101418] px-2 py-1"
+                            onClick={() => addQuickAmount(panel.id, amount)}
+                          >
+                            {amount.toLocaleString()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {tab === "auto" && (
+                      <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={panel.autoBet}
+                            onChange={(e) =>
+                              setPanels((prev) =>
+                                prev.map((p) => (p.id === panel.id ? { ...p, autoBet: e.target.checked } : p))
+                              )
+                            }
+                          />
+                          Auto bet
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={panel.autoCash}
+                            onChange={(e) =>
+                              setPanels((prev) =>
+                                prev.map((p) => (p.id === panel.id ? { ...p, autoCash: e.target.checked } : p))
+                              )
+                            }
+                          />
+                          Auto Cash Out
+                        </label>
+                        <input
+                          className="w-14 rounded bg-[#101418] px-2 py-1"
+                          value={panel.autoCashValue}
+                          onChange={(e) =>
+                            setPanels((prev) =>
+                              prev.map((p) => (p.id === panel.id ? { ...p, autoCashValue: e.target.value } : p))
+                            )
+                          }
+                        />
+                        <button
+                          className="rounded-full bg-[#101418] px-2 py-1"
+                          onClick={() =>
+                            setPanels((prev) =>
+                              prev.map((p) => (p.id === panel.id ? { ...p, autoCash: false } : p))
+                            )
+                          }
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-
-            <div className="mt-4 grid gap-3 lg:grid-cols-[auto_1fr_160px]">
-              <div className="flex items-center gap-2">
-                <button
-                  className="h-7 w-7 rounded-full bg-[#101418]"
-                  onClick={() => setBetAmount((prev) => (Math.max(0, Number(prev) - 1)).toFixed(2))}
-                >
-                  -
-                </button>
-                <input
-                  value={betAmount}
-                  onChange={(e) => {
-                    inputDirty.current = true;
-                    setBetAmount(e.target.value);
-                  }}
-                  onBlur={() => {
-                    inputDirty.current = false;
-                  }}
-                  className="w-20 rounded bg-[#101418] px-3 py-2 text-center text-lg"
-                />
-                <button
-                  className="h-7 w-7 rounded-full bg-[#101418]"
-                  onClick={() => setBetAmount((prev) => (Number(prev) + 1).toFixed(2))}
-                >
-                  +
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
-                {QUICK_AMOUNTS.map((amount) => (
-                  <button
-                    key={amount}
-                    className="rounded-full bg-[#101418] px-2 py-1"
-                    onClick={() => addQuickAmount(amount)}
-                  >
-                    {amount.toFixed(2)}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                className="rounded-2xl bg-emerald-500 px-4 py-3 text-lg font-semibold text-slate-950 disabled:opacity-50"
-                onClick={() => {
-                  if (canCashout) return handleCashout();
-                  if (canBet) return handleBet();
-                }}
-                disabled={!canBet && !canCashout}
-              >
-                {canCashout ? "Cash Out" : "Bet"}
-              </button>
-            </div>
-
-            {tab === "auto" && (
-              <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={autoBet} onChange={(e) => setAutoBet(e.target.checked)} />
-                  Auto bet
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={autoCash} onChange={(e) => setAutoCash(e.target.checked)} />
-                  Auto Cash Out
-                </label>
-                <input
-                  className="w-16 rounded bg-[#101418] px-2 py-1"
-                  value={autoCashValue}
-                  onChange={(e) => setAutoCashValue(e.target.value)}
-                />
-              </div>
-            )}
           </div>
         </div>
       </div>

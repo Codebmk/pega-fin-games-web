@@ -31,15 +31,17 @@ export function attachWebSocket(server: Server) {
           const token = parsed.token as string | undefined;
           if (!token) throw new Error("unauthorized");
           const payload = verifyToken(token);
+          const clientTag = parsed.clientTag as string | undefined;
           const betId = await engine.placeBet(payload.id, Number(parsed.amount));
-          socket.send(JSON.stringify({ type: "bet_confirmed", betId, amount: parsed.amount }));
+          socket.send(JSON.stringify({ type: "bet_confirmed", betId, amount: parsed.amount, clientTag }));
           return;
         }
         if (parsed.type === "cash_out") {
           const token = parsed.token as string | undefined;
           if (!token) throw new Error("unauthorized");
           const payload = verifyToken(token);
-          const result = await engine.cashOut(payload.id);
+          const betId = parsed.betId as string | undefined;
+          const result = await engine.cashOut(payload.id, betId);
           socket.send(JSON.stringify({ type: "cashout_success", betId: result.betId, payout: result.payout }));
           return;
         }

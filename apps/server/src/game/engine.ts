@@ -107,17 +107,25 @@ export class GameEngine {
     return betId;
   }
 
-  async cashOut(userId: string) {
+  async cashOut(userId: string, betId?: string) {
     if (this.state.status !== "running") {
       throw new Error("round_not_running");
     }
     const multiplier = this.state.multiplier;
 
-    const bet = Array.from(this.bets.values()).find(
-      (entry) => entry.userId === userId && !entry.cashedOut
-    );
+    const bet = betId
+      ? this.bets.get(betId)
+      : Array.from(this.bets.values()).find(
+          (entry) => entry.userId === userId && !entry.cashedOut
+        );
     if (!bet) {
       throw new Error("bet_not_found");
+    }
+    if (bet.userId !== userId) {
+      throw new Error("bet_not_found");
+    }
+    if (bet.cashedOut) {
+      throw new Error("bet_already_cashed");
     }
 
     bet.cashedOut = true;

@@ -284,7 +284,7 @@ export default function App() {
           </div>
         )}
 
-        <div className="mt-4 flex-1 overflow-hidden">
+        <div className="mt-4 flex-1 overflow-auto lg:overflow-hidden">
           {view === "register" && (
             <form className="grid gap-4" onSubmit={handleRegister}>
               <input name="phone" placeholder="Phone" className="rounded bg-[#111519] px-3 py-2" required />
@@ -324,7 +324,7 @@ export default function App() {
           )}
 
           {view === "dashboard" && (
-            <div className="h-full overflow-hidden lg:overflow-hidden">
+            <div className="h-full overflow-auto lg:overflow-hidden">
               <GamePanel
                 onCashout={() => loadWallet()}
                 onBetPlaced={() => loadWallet()}
