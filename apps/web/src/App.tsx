@@ -211,6 +211,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#1a1f23] text-slate-100">
+      {message && (
+        <div className="fixed top-4 left-1/2 z-50 w-[min(520px,calc(100%-2rem))] -translate-x-1/2 px-4 pointer-events-none">
+          <div className="rounded border border-slate-700 bg-[#111519]/90 px-4 py-2 text-sm shadow-lg backdrop-blur">
+            {message}
+          </div>
+        </div>
+      )}
       <div className="mx-auto flex h-screen max-w-7xl flex-col px-6 py-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -277,12 +284,6 @@ export default function App() {
             )}
           </div>
         </div>
-
-        {message && (
-          <div className="mt-4 rounded border border-slate-700 bg-[#111519] px-4 py-2 text-sm">
-            {message}
-          </div>
-        )}
 
         <div className="mt-4 flex-1 overflow-auto lg:overflow-hidden">
           {view === "register" && (

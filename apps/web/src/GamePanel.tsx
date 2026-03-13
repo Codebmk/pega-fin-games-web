@@ -21,6 +21,8 @@ type PanelState = {
   id: "A" | "B";
   betAmount: string;
   betId: string | null;
+  activeBetAmount: number | null;
+  pendingBet: boolean;
   inputDirty: boolean;
   autoBet: boolean;
   autoCash: boolean;
@@ -39,8 +41,8 @@ type GamePanelProps = {
 const QUICK_AMOUNTS = [1000, 2000, 5000, 10000];
 
 const INITIAL_PANELS: PanelState[] = [
-  { id: "A", betAmount: "1.00", betId: null, inputDirty: false, autoBet: false, autoCash: false, autoCashValue: "1.10" },
-  { id: "B", betAmount: "1.00", betId: null, inputDirty: false, autoBet: false, autoCash: false, autoCashValue: "1.10" },
+  { id: "A", betAmount: "1.00", betId: null, activeBetAmount: null, pendingBet: false, inputDirty: false, autoBet: false, autoCash: false, autoCashValue: "1.10" },
+  { id: "B", betAmount: "1.00", betId: null, activeBetAmount: null, pendingBet: false, inputDirty: false, autoBet: false, autoCash: false, autoCashValue: "1.10" },
 ];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -97,18 +99,21 @@ function AmountStepper({
   onBlur,
   onDecrement,
   onIncrement,
+  disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
   onBlur: () => void;
   onDecrement: () => void;
   onIncrement: () => void;
+  disabled: boolean;
 }) {
   return (
     <div className="flex items-center gap-2">
       <button
         onClick={onDecrement}
-        className="h-8 w-8 flex-shrink-0 rounded-full bg-[#101418] text-white flex items-center justify-center text-lg leading-none hover:bg-[#2a3038] transition-colors"
+        disabled={disabled}
+        className="h-8 w-8 flex-shrink-0 rounded-full bg-[#101418] text-white flex items-center justify-center text-lg leading-none hover:bg-[#2a3038] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         −
       </button>
@@ -116,11 +121,13 @@ function AmountStepper({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
-        className="flex-1 min-w-0 rounded-lg bg-[#101418] px-1 py-2 text-center text-sm font-semibold text-white outline-none focus:ring-1 focus:ring-emerald-500"
+        disabled={disabled}
+        className="flex-1 min-w-0 rounded-lg bg-[#101418] px-1 py-2 text-center text-sm font-semibold text-white outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed"
       />
       <button
         onClick={onIncrement}
-        className="h-8 w-8 flex-shrink-0 rounded-full bg-[#101418] text-white flex items-center justify-center text-lg leading-none hover:bg-[#2a3038] transition-colors"
+        disabled={disabled}
+        className="h-8 w-8 flex-shrink-0 rounded-full bg-[#101418] text-white flex items-center justify-center text-lg leading-none hover:bg-[#2a3038] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         +
       </button>
@@ -129,14 +136,21 @@ function AmountStepper({
 }
 
 /** 2×2 quick-amount preset grid */
-function QuickAmounts({ onSelect }: { onSelect: (amount: number) => void }) {
+function QuickAmounts({
+  onSelect,
+  disabled,
+}: {
+  onSelect: (amount: number) => void;
+  disabled: boolean;
+}) {
   return (
     <div className="grid grid-cols-2 gap-1.5">
       {QUICK_AMOUNTS.map((amount) => (
         <button
           key={amount}
           onClick={() => onSelect(amount)}
-          className="rounded-full bg-[#101418] py-1 text-xs text-slate-300 hover:bg-[#2a3038] transition-colors"
+          disabled={disabled}
+          className="rounded-full bg-[#101418] py-1 text-xs text-slate-300 hover:bg-[#2a3038] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {amount.toLocaleString()}
         </button>
@@ -152,13 +166,31 @@ function ActionButton({
   amount,
   onBet,
   onCashout,
+  isPendingBet,
+  onCancelBet,
 }: {
   canBet: boolean;
   canCashout: boolean;
   amount: string;
   onBet: () => void;
   onCashout: () => void;
+  isPendingBet: boolean;
+  onCancelBet: () => void;
 }) {
+  if (isPendingBet) {
+    return (
+      <button
+        onClick={onCancelBet}
+        className="flex-1 min-w-0 rounded-2xl font-semibold text-white flex flex-col items-center justify-center gap-0.5 py-3 px-2 transition-colors bg-[#3a4148] hover:bg-[#4a525a]"
+      >
+        <span className="text-sm font-bold leading-tight truncate">Cancel</span>
+        <span className="text-xs font-semibold leading-tight truncate">
+          {Number(amount).toFixed(2)} USDC
+        </span>
+      </button>
+    );
+  }
+
   return (
     <button
       disabled={!canBet && !canCashout}
@@ -227,6 +259,7 @@ function BetPanel({
   canCashout,
   onBet,
   onCashout,
+  onCancelBet,
   onAmountChange,
   onAmountBlur,
   onDecrement,
@@ -236,6 +269,7 @@ function BetPanel({
   onToggleAutoCash,
   onAutoCashValueChange,
   onDismissAutoCash,
+  inputLocked,
 }: {
   panel: PanelState;
   tab: "bet" | "auto";
@@ -244,6 +278,7 @@ function BetPanel({
   canCashout: boolean;
   onBet: () => void;
   onCashout: () => void;
+  onCancelBet: () => void;
   onAmountChange: (v: string) => void;
   onAmountBlur: () => void;
   onDecrement: () => void;
@@ -253,6 +288,7 @@ function BetPanel({
   onToggleAutoCash: () => void;
   onAutoCashValueChange: (v: string) => void;
   onDismissAutoCash: () => void;
+  inputLocked: boolean;
 }) {
   return (
     <div className="rounded-2xl bg-[#20262b] p-3 flex flex-col gap-2 min-w-0 overflow-hidden">
@@ -267,8 +303,9 @@ function BetPanel({
             onBlur={onAmountBlur}
             onDecrement={onDecrement}
             onIncrement={onIncrement}
+            disabled={inputLocked}
           />
-          <QuickAmounts onSelect={onQuickAmount} />
+          <QuickAmounts onSelect={onQuickAmount} disabled={inputLocked} />
         </div>
 
         {/* Right: action button spanning full height */}
@@ -278,6 +315,8 @@ function BetPanel({
           amount={panel.betAmount}
           onBet={onBet}
           onCashout={onCashout}
+          isPendingBet={panel.pendingBet}
+          onCancelBet={onCancelBet}
         />
       </div>
 
@@ -441,6 +480,8 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
   const token = useMemo(() => localStorage.getItem("token"), []);
   const socketRef = useRef<WebSocket | null>(null);
   const autoCashTriggered = useRef<Record<string, boolean>>({});
+  const pendingBetTimers = useRef<Record<PanelState["id"], number | null>>({ A: null, B: null });
+  const optimisticCashouts = useRef<Record<string, number>>({});
 
   const bettingProgress = bettingEndsAt
     ? Math.max(0, Math.min(1, (bettingEndsAt - Date.now()) / 5000))
@@ -481,7 +522,8 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
         setCrashPoint(null);
         setBettingEndsAt(Number(msg.bettingEndsAt ?? null));
         autoCashTriggered.current = {};
-        setPanels((prev) => prev.map((p) => ({ ...p, betId: null })));
+        clearPendingBets();
+        setPanels((prev) => prev.map((p) => ({ ...p, betId: null, activeBetAmount: null })));
         setPanels((prev) =>
           prev.map((p) => {
             if (p.autoBet && hasFunds) handleBet(p.id, p.betAmount);
@@ -500,7 +542,9 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
         setCrashPoint(Number(msg.crashPoint ?? 1));
         setBettingEndsAt(null);
         autoCashTriggered.current = {};
-        setPanels((prev) => prev.map((p) => ({ ...p, betId: null })));
+        optimisticCashouts.current = {};
+        clearPendingBets();
+        setPanels((prev) => prev.map((p) => ({ ...p, betId: null, activeBetAmount: null })));
         return;
       }
       if (msg.type === "round_history") {
@@ -511,22 +555,39 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
       if (msg.type === "bet_confirmed") {
         const betId = String(msg.betId ?? "");
         const clientTag = String(msg.clientTag ?? "");
-        setPanels((prev) => prev.map((p) => (p.id === clientTag ? { ...p, betId } : p)));
+        setPanels((prev) =>
+          prev.map((p) =>
+            p.id === clientTag
+              ? { ...p, betId, activeBetAmount: Number(p.betAmount), pendingBet: false }
+              : p
+          )
+        );
         onBetPlaced?.();
         return;
       }
       if (msg.type === "cashout_success") {
         const payout = Number(msg.payout ?? 0);
         const betId = String(msg.betId ?? "");
+        const hadOptimistic = optimisticCashouts.current[betId] != null;
+        delete optimisticCashouts.current[betId];
         onCashout?.(payout);
-        showToast?.(`Cashed out ${payout.toFixed(2)} USDC`);
+        if (!hadOptimistic) {
+          showToast?.(`Cashed out ${payout.toFixed(2)} USDC`);
+        }
         autoCashTriggered.current[betId] = true;
-        setPanels((prev) => prev.map((p) => (p.betId === betId ? { ...p, betId: null } : p)));
+        setPanels((prev) =>
+          prev.map((p) =>
+            p.betId === betId ? { ...p, betId: null, activeBetAmount: null } : p
+          )
+        );
         return;
       }
     };
 
-    return () => ws.close();
+    return () => {
+      clearPendingBets(false);
+      ws.close();
+    };
   }, [hasFunds, historyLimit, onBetPlaced, onCashout, showToast]);
 
   // Auto cash-out watcher
@@ -563,12 +624,51 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
 
   function handleBet(panelId: "A" | "B", amount: string) {
     if (!token) return;
-    sendMessage({ type: "place_bet", amount, token, clientTag: panelId });
+    if (pendingBetTimers.current[panelId]) return;
+    setPanels((prev) => prev.map((p) => (p.id === panelId ? { ...p, pendingBet: true } : p)));
+    pendingBetTimers.current[panelId] = window.setTimeout(() => {
+      pendingBetTimers.current[panelId] = null;
+      setPanels((prev) => prev.map((p) => (p.id === panelId ? { ...p, pendingBet: false } : p)));
+      sendMessage({ type: "place_bet", amount, token, clientTag: panelId });
+    }, 450);
   }
 
   function handleCashout(betId?: string) {
     if (!token) return;
+    if (betId) {
+      const panel = panels.find((p) => p.betId === betId);
+      if (panel) {
+        const amount = panel.activeBetAmount ?? Number(panel.betAmount);
+        const payout = Number((amount * multiplier).toFixed(2));
+        optimisticCashouts.current[betId] = payout;
+        showToast?.(`Cashed out ${payout.toFixed(2)} USDC`);
+        setPanels((prev) =>
+          prev.map((p) => (p.betId === betId ? { ...p, betId: null, activeBetAmount: null } : p))
+        );
+      }
+    }
     sendMessage({ type: "cash_out", token, betId });
+  }
+
+  function cancelPendingBet(panelId: "A" | "B") {
+    const timer = pendingBetTimers.current[panelId];
+    if (timer) {
+      clearTimeout(timer);
+      pendingBetTimers.current[panelId] = null;
+      setPanels((prev) => prev.map((p) => (p.id === panelId ? { ...p, pendingBet: false } : p)));
+      showToast?.("Bet canceled.");
+    }
+  }
+
+  function clearPendingBets(resetState = true) {
+    (Object.keys(pendingBetTimers.current) as PanelState["id"][]).forEach((id) => {
+      const timer = pendingBetTimers.current[id];
+      if (timer) clearTimeout(timer);
+      pendingBetTimers.current[id] = null;
+    });
+    if (resetState) {
+      setPanels((prev) => prev.map((p) => (p.pendingBet ? { ...p, pendingBet: false } : p)));
+    }
   }
 
   function updatePanel(id: "A" | "B", patch: Partial<PanelState>) {
@@ -629,8 +729,13 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
             <div className="grid grid-cols-2 gap-3 w-full">
               {panels.map((panel) => {
                 const canBet =
-                  status === "betting" && hasFunds && Number(panel.betAmount) > 0 && !panel.betId;
+                  status === "betting" &&
+                  hasFunds &&
+                  Number(panel.betAmount) > 0 &&
+                  !panel.betId &&
+                  !panel.pendingBet;
                 const canCashout = status === "running" && hasFunds && !!panel.betId;
+                const inputLocked = panel.pendingBet;
 
                 return (
                   <BetPanel
@@ -642,6 +747,7 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
                     canCashout={canCashout}
                     onBet={() => handleBet(panel.id, panel.betAmount)}
                     onCashout={() => handleCashout(panel.betId ?? undefined)}
+                    onCancelBet={() => cancelPendingBet(panel.id)}
                     onAmountChange={(v) => updatePanel(panel.id, { betAmount: v, inputDirty: true })}
                     onAmountBlur={() => updatePanel(panel.id, { inputDirty: false })}
                     onDecrement={() =>
@@ -659,6 +765,7 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
                     onToggleAutoCash={() => updatePanel(panel.id, { autoCash: !panel.autoCash })}
                     onAutoCashValueChange={(v) => updatePanel(panel.id, { autoCashValue: v })}
                     onDismissAutoCash={() => updatePanel(panel.id, { autoCash: false })}
+                    inputLocked={inputLocked}
                   />
                 );
               })}
