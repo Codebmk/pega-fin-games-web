@@ -36,6 +36,7 @@ export default function App() {
   const [walletCurrency, setWalletCurrency] = useState<string>("USDC");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [me, setMe] = useState<MeResponse | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState({
     register: false,
     login: false,
@@ -47,7 +48,10 @@ export default function App() {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (!token) return;
+    if (!token) {
+      setAuthChecking(false);
+      return;
+    }
     apiFetch<MeResponse>("/me")
       .then((data) => {
         setMe(data);
@@ -55,8 +59,15 @@ export default function App() {
       })
       .catch(() => {
         localStorage.removeItem("token");
-      });
+      })
+      .finally(() => setAuthChecking(false));
   }, []);
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(""), 4000);
+    return () => clearTimeout(timer);
+  }, [message]);
 
   async function handleRegister(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -181,6 +192,18 @@ export default function App() {
   }
 
   const showKycChip = !!me && me.kycStatus !== "approved";
+  const isLoggedIn = !!me;
+
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-slate-700 border-t-emerald-400" />
+          <div className="text-sm text-slate-400">Loading games...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -198,30 +221,38 @@ export default function App() {
             )}
           </div>
           <div className="flex gap-3 text-sm">
-            <button
-              className={`px-3 py-1 rounded border ${view === "register" ? "border-white" : "border-slate-700"}`}
-              onClick={() => setView("register")}
-            >
-              Register
-            </button>
-            <button
-              className={`px-3 py-1 rounded border ${view === "login" ? "border-white" : "border-slate-700"}`}
-              onClick={() => setView("login")}
-            >
-              Login
-            </button>
-            <button
-              className={`px-3 py-1 rounded border ${view === "dashboard" ? "border-white" : "border-slate-700"}`}
-              onClick={() => setView("dashboard")}
-            >
-              Dashboard
-            </button>
-            <button
-              className={`px-3 py-1 rounded border ${view === "admin" ? "border-white" : "border-slate-700"}`}
-              onClick={() => setView("admin")}
-            >
-              Admin
-            </button>
+            {!isLoggedIn && (
+              <>
+                <button
+                  className={`px-3 py-1 rounded border ${view === "register" ? "border-white" : "border-slate-700"}`}
+                  onClick={() => setView("register")}
+                >
+                  Register
+                </button>
+                <button
+                  className={`px-3 py-1 rounded border ${view === "login" ? "border-white" : "border-slate-700"}`}
+                  onClick={() => setView("login")}
+                >
+                  Login
+                </button>
+              </>
+            )}
+            {isLoggedIn && (
+              <>
+                <button
+                  className={`px-3 py-1 rounded border ${view === "dashboard" ? "border-white" : "border-slate-700"}`}
+                  onClick={() => setView("dashboard")}
+                >
+                  Dashboard
+                </button>
+                <button
+                  className={`px-3 py-1 rounded border ${view === "admin" ? "border-white" : "border-slate-700"}`}
+                  onClick={() => setView("admin")}
+                >
+                  Admin
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -231,7 +262,7 @@ export default function App() {
           </div>
         )}
 
-        {view === "register" && (
+        {!authChecking && view === "register" && (
           <form className="mt-8 grid gap-4" onSubmit={handleRegister}>
             <input name="phone" placeholder="Phone" className="rounded bg-slate-900 px-3 py-2" required />
             <input name="password" type="password" placeholder="Password" className="rounded bg-slate-900 px-3 py-2" required />
@@ -246,7 +277,7 @@ export default function App() {
           </form>
         )}
 
-        {view === "login" && (
+        {!authChecking && view === "login" && (
           <form className="mt-8 grid gap-4" onSubmit={handleLogin}>
             <input name="phone" placeholder="Phone" className="rounded bg-slate-900 px-3 py-2" required />
             <input name="password" type="password" placeholder="Password" className="rounded bg-slate-900 px-3 py-2" required />
@@ -256,7 +287,7 @@ export default function App() {
           </form>
         )}
 
-        {view === "kyc" && (
+        {!authChecking && view === "kyc" && (
           <form className="mt-8 grid gap-4" onSubmit={handleKyc}>
             <div className="text-sm text-slate-400">
               Upload front and back images of the government ID.
@@ -269,7 +300,7 @@ export default function App() {
           </form>
         )}
 
-        {view === "dashboard" && (
+        {!authChecking && view === "dashboard" && (
           <div className="mt-8 grid gap-6">
             <div className="rounded border border-slate-800 bg-slate-900 p-4">
               <div className="text-sm text-slate-400">Balance</div>
@@ -322,7 +353,7 @@ export default function App() {
           </div>
         )}
 
-        {view === "admin" && (
+        {!authChecking && view === "admin" && (
           <div className="mt-8 grid gap-4">
             <button
               className="w-fit rounded bg-amber-400 px-4 py-2 font-semibold text-slate-950"
