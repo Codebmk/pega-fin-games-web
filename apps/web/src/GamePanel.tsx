@@ -23,6 +23,8 @@ type Props = {
   showToast?: (message: string) => void;
 };
 
+const QUICK_AMOUNTS = [1, 2, 5, 10];
+
 export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast }: Props) {
   const [status, setStatus] = useState<EngineState["status"]>("waiting");
   const [multiplier, setMultiplier] = useState(1);
@@ -39,10 +41,12 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
   const [autoCash, setAutoCash] = useState(false);
   const [autoCashValue, setAutoCashValue] = useState("1.10");
   const [historyLimit, setHistoryLimit] = useState(60);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
 
   const token = useMemo(() => localStorage.getItem("token"), []);
   const socketRef = useRef<WebSocket | null>(null);
   const autoCashTriggered = useRef(false);
+  const inputDirty = useRef(false);
 
   const bettingProgress = bettingEndsAt
     ? Math.max(0, Math.min(1, (bettingEndsAt - Date.now()) / 5000))
@@ -173,47 +177,79 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
     sendMessage({ type: "cash_out", token });
   }
 
+  function addQuickAmount(amount: number) {
+    if (inputDirty.current) return;
+    const current = Number(betAmount) || 0;
+    const next = current + amount;
+    setBetAmount(next.toFixed(2));
+  }
+
   const canBet = status === "betting" && hasFunds && Number(betAmount) > 0 && !activeBet;
   const canCashout = status === "running" && hasFunds && activeBet;
   const runningPayout = (Number(betAmount) || 0) * multiplier;
+  const historyVisible = historyExpanded ? history : history.slice(0, Math.min(historyLimit, 18));
 
   return (
     <div className="flex h-full flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="hidden lg:flex gap-2 rounded-full bg-[#111519] px-3 py-2 text-xs">
-          <button className="rounded-full bg-[#1f252b] px-4 py-1">All Bets</button>
-          <button className="rounded-full bg-[#1f252b] px-4 py-1">Previous</button>
-          <button className="rounded-full bg-[#1f252b] px-4 py-1">Top</button>
-        </div>
-
-        <div className="flex w-full flex-wrap items-center gap-2 rounded-full bg-[#111519] px-4 py-2 text-xs text-slate-300 lg:w-auto">
-          {history.slice(0, historyLimit).map((val, idx) => (
-            <span key={`${val}-${idx}`} className={val >= 2 ? "text-emerald-400" : "text-rose-400"}>
-              {val.toFixed(2)}x
-            </span>
-          ))}
-        </div>
-      </div>
-
       <div className="grid flex-1 gap-4 lg:grid-cols-[320px_1fr]">
         <div className="hidden h-full rounded-2xl bg-[#111519] p-4 lg:block">
-          <div className="rounded-xl bg-[#1f252b] px-4 py-3 text-center">
-            <div className="text-xs text-slate-400">Round Result</div>
-            <div className="text-3xl font-semibold text-emerald-400">{(crashPoint ?? 0).toFixed(2)}x</div>
+          <div className="flex items-center justify-between rounded-full bg-[#0f1317] px-2 py-2 text-sm">
+            <button className="rounded-full bg-[#1f252b] px-5 py-1 font-semibold">All Bets</button>
+            <button className="rounded-full px-5 py-1 text-slate-400">Previous</button>
+            <button className="rounded-full px-5 py-1 text-slate-400">Top</button>
           </div>
 
-          <div className="mt-4 text-xs uppercase text-slate-400">Player</div>
+          <div className="mt-4 flex items-center justify-between rounded-xl bg-[#1b2025] px-4 py-3">
+            <div>
+              <div className="text-xs text-slate-400">Bets</div>
+              <div className="text-sm font-semibold">3764/3764</div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-slate-400">Total win USDC</div>
+              <div className="text-lg font-semibold">0.00</div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-[1fr_1fr_0.6fr_1fr] gap-2 text-xs uppercase text-slate-500">
+            <div>Player</div>
+            <div>Bet USDC</div>
+            <div>X</div>
+            <div>Win USDC</div>
+          </div>
+
           <div className="mt-2 space-y-2 text-sm">
             {[1, 2, 3, 4, 5, 6, 7, 8].map((row) => (
-              <div key={row} className="flex items-center justify-between rounded-lg bg-[#0d1114] px-3 py-2">
+              <div key={row} className="grid grid-cols-[1fr_1fr_0.6fr_1fr] items-center gap-2 rounded-lg bg-[#0d1114] px-3 py-2">
                 <span>b***{row}</span>
-                <span className="text-emerald-400">{(Math.random() * 5 + 1).toFixed(2)}x</span>
+                <span>{(Math.random() * 200000 + 50000).toFixed(2)}</span>
+                <span className="text-emerald-400">{(Math.random() * 2 + 1).toFixed(2)}x</span>
+                <span>{(Math.random() * 400000 + 80000).toFixed(2)}</span>
               </div>
             ))}
           </div>
+
+          <div className="mt-4 text-xs text-slate-500">Provably Fair Game</div>
         </div>
 
         <div className="flex h-full flex-col gap-4">
+          <div className="rounded-2xl bg-[#111519] px-4 py-3">
+            <div className="flex items-center justify-between">
+              <button
+                className="rounded-full bg-[#1f252b] px-2 py-1 text-xs"
+                onClick={() => setHistoryExpanded((prev) => !prev)}
+              >
+                {historyExpanded ? "×" : "···"}
+              </button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
+              {historyVisible.map((val, idx) => (
+                <span key={`${val}-${idx}`} className={val >= 2 ? "text-emerald-400" : "text-rose-400"}>
+                  {val.toFixed(2)}x
+                </span>
+              ))}
+            </div>
+          </div>
+
           <div className="flex-1 rounded-2xl bg-[radial-gradient(circle_at_top,_#232a30,_#0b0f12)] p-6">
             <div className="flex items-center justify-between text-xs text-slate-400">
               <span className="uppercase tracking-wider">{status}</span>
@@ -253,31 +289,42 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
               </button>
             </div>
 
-            <div className="mt-4 flex items-center justify-between">
+            <div className="mt-4 grid gap-3 lg:grid-cols-[auto_1fr_auto]">
               <button
-                className="h-8 w-8 rounded-full bg-[#101418]"
+                className="h-9 w-9 rounded-full bg-[#101418]"
                 onClick={() => setBetAmount((prev) => (Math.max(0, Number(prev) - 1)).toFixed(2))}
               >
                 -
               </button>
               <input
                 value={betAmount}
-                onChange={(e) => setBetAmount(e.target.value)}
-                className="w-24 rounded bg-[#101418] px-3 py-2 text-center text-lg"
+                onChange={(e) => {
+                  inputDirty.current = true;
+                  setBetAmount(e.target.value);
+                }}
+                onBlur={() => {
+                  inputDirty.current = false;
+                }}
+                className="w-full rounded bg-[#101418] px-3 py-2 text-center text-lg"
               />
               <button
-                className="h-8 w-8 rounded-full bg-[#101418]"
+                className="h-9 w-9 rounded-full bg-[#101418]"
                 onClick={() => setBetAmount((prev) => (Number(prev) + 1).toFixed(2))}
               >
                 +
               </button>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-slate-400">
-              <button className="rounded-full bg-[#101418] px-2 py-1" onClick={() => setBetAmount("1.00")}>1.00</button>
-              <button className="rounded-full bg-[#101418] px-2 py-1" onClick={() => setBetAmount("2.00")}>2.00</button>
-              <button className="rounded-full bg-[#101418] px-2 py-1" onClick={() => setBetAmount("5.00")}>5.00</button>
-              <button className="rounded-full bg-[#101418] px-2 py-1" onClick={() => setBetAmount("10.00")}>10.00</button>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
+              {QUICK_AMOUNTS.map((amount) => (
+                <button
+                  key={amount}
+                  className="rounded-full bg-[#101418] px-2 py-1"
+                  onClick={() => addQuickAmount(amount)}
+                >
+                  {amount.toFixed(2)}
+                </button>
+              ))}
             </div>
 
             {tab === "auto" && (
@@ -298,31 +345,54 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
               </div>
             )}
 
-            <button
-              className="mt-4 w-full rounded-2xl bg-emerald-500 px-6 py-4 text-lg font-semibold text-slate-950 disabled:opacity-50"
-              onClick={() => {
-                if (canCashout) return handleCashout();
-                if (canBet) return handleBet();
-              }}
-              disabled={!canBet && !canCashout}
-            >
-              {canCashout ? `Cash Out ${runningPayout.toFixed(2)} USDC` : `Place Bet ${betAmount} USDC`}
-            </button>
+            <div className="mt-4 grid grid-cols-[1fr_160px] gap-3">
+              <div className="rounded-2xl bg-[#101418] px-3 py-3 text-sm text-slate-400">
+                {canCashout ? `Live payout ${runningPayout.toFixed(2)} USDC` : ""}
+              </div>
+              <button
+                className="rounded-2xl bg-emerald-500 px-4 py-3 text-lg font-semibold text-slate-950 disabled:opacity-50"
+                onClick={() => {
+                  if (canCashout) return handleCashout();
+                  if (canBet) return handleBet();
+                }}
+                disabled={!canBet && !canCashout}
+              >
+                {canCashout ? `Cash Out` : `Bet`}
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <div className="block rounded-2xl bg-[#111519] p-4 lg:hidden">
-        <div className="rounded-xl bg-[#1f252b] px-4 py-3 text-center">
-          <div className="text-xs text-slate-400">Round Result</div>
-          <div className="text-3xl font-semibold text-emerald-400">{(crashPoint ?? 0).toFixed(2)}x</div>
+        <div className="flex items-center justify-between rounded-full bg-[#0f1317] px-2 py-2 text-sm">
+          <button className="rounded-full bg-[#1f252b] px-5 py-1 font-semibold">All Bets</button>
+          <button className="rounded-full px-5 py-1 text-slate-400">Previous</button>
+          <button className="rounded-full px-5 py-1 text-slate-400">Top</button>
         </div>
-        <div className="mt-4 text-xs uppercase text-slate-400">Player</div>
+        <div className="mt-4 flex items-center justify-between rounded-xl bg-[#1b2025] px-4 py-3">
+          <div>
+            <div className="text-xs text-slate-400">Bets</div>
+            <div className="text-sm font-semibold">3764/3764</div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-slate-400">Total win USDC</div>
+            <div className="text-lg font-semibold">0.00</div>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-[1fr_1fr_0.6fr_1fr] gap-2 text-xs uppercase text-slate-500">
+          <div>Player</div>
+          <div>Bet USDC</div>
+          <div>X</div>
+          <div>Win USDC</div>
+        </div>
         <div className="mt-2 space-y-2 text-sm">
           {[1, 2, 3, 4, 5, 6].map((row) => (
-            <div key={row} className="flex items-center justify-between rounded-lg bg-[#0d1114] px-3 py-2">
+            <div key={row} className="grid grid-cols-[1fr_1fr_0.6fr_1fr] items-center gap-2 rounded-lg bg-[#0d1114] px-3 py-2">
               <span>b***{row}</span>
-              <span className="text-emerald-400">{(Math.random() * 5 + 1).toFixed(2)}x</span>
+              <span>{(Math.random() * 200000 + 50000).toFixed(2)}</span>
+              <span className="text-emerald-400">{(Math.random() * 2 + 1).toFixed(2)}x</span>
+              <span>{(Math.random() * 400000 + 80000).toFixed(2)}</span>
             </div>
           ))}
         </div>
