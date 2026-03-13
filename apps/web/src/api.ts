@@ -1,6 +1,8 @@
 ﻿export const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
-export async function apiFetch<T>(path: string, options: RequestInit = {}) {
+export async function apiFetch<T>(path: string, options: RequestInit = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const token = localStorage.getItem("token");
   const headers = new Headers(options.headers ?? {});
   if (token) {
@@ -12,8 +14,9 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}) {
 
   const res = await fetch(`${apiBase}${path}`, {
     ...options,
-    headers
-  });
+    headers,
+    signal: controller.signal
+  }).finally(() => clearTimeout(timeout));
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
