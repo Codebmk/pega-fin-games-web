@@ -1,4 +1,5 @@
 ﻿export const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+export const wsBase = import.meta.env.VITE_WS_URL ?? apiBase.replace(/^http/, "ws");
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}, timeoutMs = 10000) {
   const controller = new AbortController();
