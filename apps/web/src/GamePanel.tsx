@@ -231,9 +231,16 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
           <div className="mt-4 text-xs text-slate-500">Provably Fair Game</div>
         </div>
 
-        <div className="flex h-full flex-col gap-4">
-          <div className="rounded-2xl bg-[#111519] px-4 py-3">
-            <div className="flex items-center justify-between">
+        <div className="relative flex h-full flex-col gap-4">
+          <div className="absolute left-0 right-0 top-0 z-20">
+            <div className="flex justify-between items-start rounded-2xl bg-[#111519] px-4 py-3 shadow-xl">
+              <div className="flex flex-wrap gap-2 text-xs text-slate-300">
+                {historyVisible.map((val, idx) => (
+                  <span key={`${val}-${idx}`} className={val >= 2 ? "text-emerald-400" : "text-rose-400"}>
+                    {val.toFixed(2)}x
+                  </span>
+                ))}
+              </div>
               <button
                 className="rounded-full bg-[#1f252b] px-2 py-1 text-xs"
                 onClick={() => setHistoryExpanded((prev) => !prev)}
@@ -241,16 +248,9 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
                 {historyExpanded ? "×" : "···"}
               </button>
             </div>
-            <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
-              {historyVisible.map((val, idx) => (
-                <span key={`${val}-${idx}`} className={val >= 2 ? "text-emerald-400" : "text-rose-400"}>
-                  {val.toFixed(2)}x
-                </span>
-              ))}
-            </div>
           </div>
 
-          <div className="flex-1 rounded-2xl bg-[radial-gradient(circle_at_top,_#232a30,_#0b0f12)] p-6">
+          <div className="flex-1 rounded-2xl bg-[radial-gradient(circle_at_top,_#232a30,_#0b0f12)] p-6 pt-20">
             <div className="flex items-center justify-between text-xs text-slate-400">
               <span className="uppercase tracking-wider">{status}</span>
               <span>{connected ? "WS connected" : "WS disconnected"}</span>
@@ -289,42 +289,55 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
               </button>
             </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-[auto_1fr_auto]">
-              <button
-                className="h-9 w-9 rounded-full bg-[#101418]"
-                onClick={() => setBetAmount((prev) => (Math.max(0, Number(prev) - 1)).toFixed(2))}
-              >
-                -
-              </button>
-              <input
-                value={betAmount}
-                onChange={(e) => {
-                  inputDirty.current = true;
-                  setBetAmount(e.target.value);
-                }}
-                onBlur={() => {
-                  inputDirty.current = false;
-                }}
-                className="w-full rounded bg-[#101418] px-3 py-2 text-center text-lg"
-              />
-              <button
-                className="h-9 w-9 rounded-full bg-[#101418]"
-                onClick={() => setBetAmount((prev) => (Number(prev) + 1).toFixed(2))}
-              >
-                +
-              </button>
-            </div>
-
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-400">
-              {QUICK_AMOUNTS.map((amount) => (
+            <div className="mt-4 grid gap-3 lg:grid-cols-[auto_1fr_160px]">
+              <div className="flex items-center gap-2">
                 <button
-                  key={amount}
-                  className="rounded-full bg-[#101418] px-2 py-1"
-                  onClick={() => addQuickAmount(amount)}
+                  className="h-7 w-7 rounded-full bg-[#101418]"
+                  onClick={() => setBetAmount((prev) => (Math.max(0, Number(prev) - 1)).toFixed(2))}
                 >
-                  {amount.toFixed(2)}
+                  -
                 </button>
-              ))}
+                <input
+                  value={betAmount}
+                  onChange={(e) => {
+                    inputDirty.current = true;
+                    setBetAmount(e.target.value);
+                  }}
+                  onBlur={() => {
+                    inputDirty.current = false;
+                  }}
+                  className="w-20 rounded bg-[#101418] px-3 py-2 text-center text-lg"
+                />
+                <button
+                  className="h-7 w-7 rounded-full bg-[#101418]"
+                  onClick={() => setBetAmount((prev) => (Number(prev) + 1).toFixed(2))}
+                >
+                  +
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
+                {QUICK_AMOUNTS.map((amount) => (
+                  <button
+                    key={amount}
+                    className="rounded-full bg-[#101418] px-2 py-1"
+                    onClick={() => addQuickAmount(amount)}
+                  >
+                    {amount.toFixed(2)}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                className="rounded-2xl bg-emerald-500 px-4 py-3 text-lg font-semibold text-slate-950 disabled:opacity-50"
+                onClick={() => {
+                  if (canCashout) return handleCashout();
+                  if (canBet) return handleBet();
+                }}
+                disabled={!canBet && !canCashout}
+              >
+                {canCashout ? "Cash Out" : "Bet"}
+              </button>
             </div>
 
             {tab === "auto" && (
@@ -344,22 +357,6 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
                 />
               </div>
             )}
-
-            <div className="mt-4 grid grid-cols-[1fr_160px] gap-3">
-              <div className="rounded-2xl bg-[#101418] px-3 py-3 text-sm text-slate-400">
-                {canCashout ? `Live payout ${runningPayout.toFixed(2)} USDC` : ""}
-              </div>
-              <button
-                className="rounded-2xl bg-emerald-500 px-4 py-3 text-lg font-semibold text-slate-950 disabled:opacity-50"
-                onClick={() => {
-                  if (canCashout) return handleCashout();
-                  if (canBet) return handleBet();
-                }}
-                disabled={!canBet && !canCashout}
-              >
-                {canCashout ? `Cash Out` : `Bet`}
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -397,14 +394,6 @@ export default function GamePanel({ onCashout, onBetPlaced, hasFunds, showToast 
           ))}
         </div>
       </div>
-
-      {log.length > 0 && (
-        <div className="text-xs text-slate-400">
-          {log.map((line, idx) => (
-            <div key={idx}>{line}</div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
